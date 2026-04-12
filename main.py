@@ -1,0 +1,123 @@
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
+from openai import OpenAI
+import os
+import base64
+import asyncio
+
+# تحميل المتغيرات من ملف .env
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"message": "Wound AI running"}
+
+@app.post("/analyze-image")
+async def analyze_image(file: UploadFile = File(...)):
+    try:
+        print(f"📥 وصل طلب جديد: {file.filename}")
+
+        # قراءة الصورة
+        image_bytes = await file.read()
+
+        # التحقق من حجم الصورة (2 ميجابايت كحد أقصى)
+        if len(image_bytes) > 2 * 1024 * 1024:
+            return JSONResponse({"error": "الصورة كبيرة جدًا، يرجى اختيار صورة أصغر"}, status_code=400)
+
+        # تحويل الصورة إلى Base64
+        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        # --- حل مشكلة MIME TYPE (تعديل جوهري) ---
+        # OpenAI تقبل فقط: image/jpeg, image/png, image/webp, image/gif
+        # بعض الجوالات ترسل image/jpg (بدون e) وهذا يسبب الخطأ الذي ظهر عندك
+        content_type = file.content_type.lower() if file.content_type else ""
+        
+        if "png" in content_type:
+            final_mime = "image/png"
+        elif "webp" in content_type:
+            final_mime = "image/webp"
+        else:
+            final_mime = "image/jpeg" # نعتمد jpeg كافتراضي لأي نوع آخر (مثل jpg)
+        # ---------------------------------------
+
+        prompt = """
+أنت خبير تشخيص طبي متخصص في تحليل إصابات الجلد (جروح، حروق، كدمات) من الصور.
+
+المهام والقيود الصارمة:
+1. فحص المحتوى: 
+   - إذا كانت الصورة لا تحتوي على جلد بشري أو إصابة واضحة (مثل جماد، حيوان، أو صورة عشوائية)، يجب أن تجعل "نوع_الإصابة": "ليست إصابة جلدية".
+   - إذا كانت الصورة لجلد سليم تماماً، اجعل "نوع_الإصابة": "جلد سليم".
+   - إذا كانت الصورة غير واضحة أو مظلمة جداً، اجعل "نوع_الإصابة": "غير واضح".
+
+2. التشخيص الدقيق:
+   - جرح: تمزق في الأنسجة مع وجود دم أو حواف مفتوحة.
+   
+   - حرق: احمرار شديد، فقاعات هوائية، أو تفحم (حدد الدرجة في التوصية).
+   - كدمة: تلون تحت الجلد (أزرق، بنفسجي، أخضر) بدون نزيف خارجي.
+   - خدش: كشط سطحي للطبقة الخارجية للجلد.
+
+3. معايير تقييم الخطورة (قواعد صارمة للمصداقية):
+   - "بسيطة": تُصنف الإصابة بسيطة إذا كانت سطحية، صغيرة المساحة، نزيفها ضئيل جداً أو متوقف، ويمكن التعامل معها بالإسعافات الأولية المنزلية دون الحاجة لخياطة طبية.
+   - "خطيرة": تُصنف الإصابة خطيرة في الحالات التالية فقط: (جرح عميق يكشف ما تحت الجلد، نزيف غزير ومستمر، حرق واسع أو من الدرجة الثانية والثالثة، وجود أجسام غريبة داخل الجرح، أو علامات تلوث واضحة).
+   
+    تنبيهات هامة للموديل:
+   - لا تحكم على الإصابة بأنها "خطيرة" لمجرد رؤية اللون الأحمر أو الدم؛ ركز على عمق الجرح ومساحته.
+   - يجب أن يكون قرارك ثابتاً ومنطقياً؛ الإصابات السطحية والخدوش هي دائماً "بسيطة".
+
+أجب باللغة العربية فقط، وبصيغة JSON حصراً، دون أي مقدمات:
+{
+  "نوع_الإصابة": "جرح | حرق | كدمة | خدش | غير واضح | ليست إصابة جلدية",
+  "مستوى_الخطورة": "بسيطة | خطيرة | غير محدد",
+  "درجة_الثقة": "عالية | متوسطة | منخفضة",
+  "التوصية": "نصيحة مختصرة جداً بناءً على الحالة",
+  "الإجراءات": [
+    "إجراء طبي 1",
+     "إجراء طبي 2",
+    "إجراء طبي 3"
+  ]
+}
+"""
+        # طلب التحليل من OpenAI
+        response = await asyncio.to_thread(
+            lambda: client.chat.completions.create(
+                model="gpt-4o-mini", 
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{final_mime};base64,{image_base64}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=500,
+                temperature=0.0,
+                response_format={ "type": "json_object" }
+            )
+        )
+
+        print("✅ اكتمل تحليل الذكاء الاصطناعي بنجاح")
+
+        result_text = response.choices[0].message.content.strip()
+        return JSONResponse({"analysis": result_text})
+
+    except asyncio.TimeoutError:
+        print("⏰ انتهى الوقت")
+        return JSONResponse({"error": "السيرفر تأخر في الرد، حاول مرة أخرى"}, status_code=504)
+
+    except Exception as e:
+        # طباعة الخطأ في الكونسول لمعرفة التفاصيل لو حدث فشل
+        error_msg = str(e)
+        print(f"❌ خطأ: {error_msg}")
+        return JSONResponse({"error": f"Error: {error_msg}"}, status_code=500)
+
+# التشغيل: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
