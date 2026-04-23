@@ -5,6 +5,7 @@ from openai import OpenAI
 import os
 import base64
 import asyncio
+import json
 
 # تحميل المتغيرات من ملف .env
 load_dotenv()
@@ -31,18 +32,14 @@ async def analyze_image(file: UploadFile = File(...)):
         # تحويل الصورة إلى Base64
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-        # --- حل مشكلة MIME TYPE (تعديل جوهري) ---
-        # OpenAI تقبل فقط: image/jpeg, image/png, image/webp, image/gif
-        # بعض الجوالات ترسل image/jpg (بدون e) وهذا يسبب الخطأ الذي ظهر عندك
+        # --- حل مشكلة MIME TYPE ---
         content_type = file.content_type.lower() if file.content_type else ""
-        
         if "png" in content_type:
             final_mime = "image/png"
         elif "webp" in content_type:
             final_mime = "image/webp"
         else:
-            final_mime = "image/jpeg" # نعتمد jpeg كافتراضي لأي نوع آخر (مثل jpg)
-        # ---------------------------------------
+            final_mime = "image/jpeg"
 
         prompt = """
 أنت خبير تشخيص طبي متخصص في تحليل إصابات الجلد (جروح، حروق، كدمات، خدوش) من الصور.
@@ -222,21 +219,17 @@ async def analyze_image(file: UploadFile = File(...)):
         print("✅ اكتمل تحليل الذكاء الاصطناعي بنجاح")
 
         result_text = response.choices[0].message.content.strip()
-        return JSONResponse({"analysis": result_text})
+        # ✅ تعديل: إرسال الرد بترميز UTF-8 صريح لحل مشكلة الرموز الغريبة
+        return JSONResponse(
+            content={"analysis": result_text},
+            headers={"Content-Type": "application/json; charset=utf-8"}
+        )
 
     except asyncio.TimeoutError:
-        print("⏰ انتهى الوقت")
-        return JSONResponse({"error": "السيرفر تأخر في الرد، حاول مرة أخرى"}, status_code=504)
-
+        return JSONResponse({"error": "السيرفر تأخر في الرد"}, status_code=504)
     except Exception as e:
-        # طباعة الخطأ في الكونسول لمعرفة التفاصيل لو حدث فشل
-        error_msg = str(e)
-        print(f"❌ خطأ: {error_msg}")
-        return JSONResponse({"error": f"Error: {error_msg}"}, status_code=500)
-    
+        return JSONResponse({"error": str(e)}, status_code=500)
 
-
-    # --- الجزء الجديد الخاص بالمرحلة الثالثة (الشات بوت) ---
 @app.post("/chat")
 async def chat_with_ai(data: dict):
     try:
@@ -264,8 +257,11 @@ async def chat_with_ai(data: dict):
             )
         )
 
-        return {"reply": response.choices[0].message.content.strip()}
+        reply = response.choices[0].message.content.strip()
+        # ✅ تعديل: ضمان إرسال رد الشات بترميز UTF-8 صحيح
+        return JSONResponse(
+            content={"reply": reply},
+            headers={"Content-Type": "application/json; charset=utf-8"}
+        )
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
-
-# التشغيل: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
