@@ -13,11 +13,14 @@ try:
 except ImportError:
     pass
 
-# 2. استبدلي سطر تعريف الـ client ليكون أكثر أماناً
+# هذا السطر هو الأهم: سيجلب المفتاح من بيئة Render إذا لم يجد ملف .env
 api_key = os.getenv("OPENAI_API_KEY")
 
 if not api_key:
-    print("خطأ: المتغير OPENAI_API_KEY غير موجود في إعدادات Render!")
+    # هذا سيظهر في Logs في Render ليخبركِ أن المتغير غير مقروء
+    print("⚠️ خطأ: OPENAI_API_KEY غير موجود!")
+else:
+    print("✅ تم العثور على المفتاح بنجاح")
 
 client = OpenAI(api_key=api_key)
 
@@ -297,4 +300,6 @@ async def chat_with_ai(data: dict):
             headers={"Content-Type": "application/json; charset=utf-8"}
         )
     except Exception as e:
+                print(f"❌ خطأ فادح أثناء التحليل: {str(e)}")
+
         return JSONResponse({"error": str(e)}, status_code=500)
