@@ -1,15 +1,25 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
-from dotenv import load_dotenv
 from openai import OpenAI
 import os
 import base64
 import asyncio
 import json
 
-# تحميل المتغيرات من ملف .env
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# 1. استبدلي سطر الاستيراد بـ try-except لضمان عدم توقف الكود إذا لم تجد المكتبة
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+# 2. استبدلي سطر تعريف الـ client ليكون أكثر أماناً
+api_key = os.getenv("OPENAI_API_KEY")
+
+if not api_key:
+    print("خطأ: المتغير OPENAI_API_KEY غير موجود في إعدادات Render!")
+
+client = OpenAI(api_key=api_key)
 
 app = FastAPI()
 
