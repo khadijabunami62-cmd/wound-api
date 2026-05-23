@@ -300,6 +300,6 @@ async def chat_with_ai(data: dict):
             headers={"Content-Type": "application/json; charset=utf-8"}
         )
     except Exception as e:
-                print(f"❌ خطأ فادح أثناء التحليل: {str(e)}")
+        print(f"❌ خطأ فادح أثناء التحليل: {str(e)}")
 
         return JSONResponse({"error": str(e)}, status_code=500)
