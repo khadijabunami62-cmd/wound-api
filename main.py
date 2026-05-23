@@ -241,6 +241,9 @@ async def analyze_image(file: UploadFile = File(...)):
     except asyncio.TimeoutError:
         return JSONResponse({"error": "السيرفر تأخر في الرد"}, status_code=504)
     except Exception as e:
+        import traceback
+        print("❌ تفاصيل الخطأ الكاملة:")
+        print(traceback.format_exc())
         return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.post("/chat")
@@ -300,6 +303,7 @@ async def chat_with_ai(data: dict):
             headers={"Content-Type": "application/json; charset=utf-8"}
         )
     except Exception as e:
-        print(f"❌ خطأ فادح أثناء التحليل: {str(e)}")
-
+        import traceback
+        print("❌ تفاصيل الخطأ الكاملة:")
+        print(traceback.format_exc())
         return JSONResponse({"error": str(e)}, status_code=500)
